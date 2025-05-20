@@ -1,13 +1,13 @@
 {
   "name": "mandiant-threat-intel",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "label": "Mandiant Threat Intelligence",
   "category": "Threat Intelligence",
   "description": "Mandiant Threat Intelligence provides automated access to indicators of compromise (IOCs) — IP addresses, domain names, URLs threat actors are using, via the indicators, allows access to full length finished intelligence in the reports, allows for notificaton of threats to brand and keyword monitoring via the alerts, and finally allows searching for intelligence on the adversary with the search. This connector facilitates automated operations such as indicators, reports, alerts, and search collections.<br/><br/>This connector has a dependency on the <a href=\"/content-hub/all-content/?contentType=solutionpack&amp;tag=ThreatIntelManagement\" target=\"_blank\" rel=\"noopener\">Threat Intel Management Solution Pack</a>. Install the Solution Pack before enabling ingestion of Threat Feeds from this source.",
   "publisher": "Fortinet",
   "cs_approved": true,
   "cs_compatible": true,
-  "help_online": "https://docs.fortinet.com/document/fortisoar/1.2.0/mandiant-threat-intelligence/1021/mandiant-threat-intelligence-v1-2-0",
+  "help_online": "",
   "icon_small_name": "small.png",
   "icon_large_name": "large.png",
   "ingestion_supported": true,
@@ -22,6 +22,92 @@
       "threat_intel_feeds",
       "indicators"
     ]
+  },
+  "ingestion_config_schema": [
+    {
+      "title": "Ingestion Begin From",
+      "name": "last_pull_datetime",
+      "type": "datetime",
+      "tooltip": "Specify the Datetime after which you want to ingest feeds",
+      "required": true,
+      "editable": true,
+      "visible": true
+    },
+    {
+      "title": "Confidence",
+      "name": "confidence",
+      "type": "integer",
+      "tooltip": "Default Confidence score to be set for the feeds, in case the feed record doesn't have a confidence score",
+      "required": false,
+      "editable": true,
+      "visible": true,
+      "value": 50,
+      "validation": {
+        "minlength": 0,
+        "maxlength": 100
+      }
+    },
+    {
+      "title": "Reputation",
+      "name": "reputation",
+      "type": "select",
+      "tooltip": "Default Reputation to be set for the feeds",
+      "required": true,
+      "editable": true,
+      "visible": true,
+      "options": [
+        "Good",
+        "Suspicious",
+        "Malicious",
+        "No Reputation Available",
+        "TBD"
+      ],
+      "value": "Suspicious"
+    },
+    {
+      "title": "TLP",
+      "name": "tlp",
+      "type": "select",
+      "tooltip": "Default TLP to be set for the feeds",
+      "required": false,
+      "editable": true,
+      "visible": true,
+      "options": [
+        "Red",
+        "Amber",
+        "Green",
+        "White"
+      ],
+      "value": "White"
+    },
+    {
+      "title": "Maximum Age (in days)",
+      "name": "expiry",
+      "type": "integer",
+      "tooltip": "Default age for the feeds. The indicator expires on 'valid_until' date unless a different expiry is specified here. If specified, the indicator will be marked expired on valid_until + expiry.",
+      "required": false,
+      "editable": true,
+      "visible": true,
+      "value": 7
+    }
+  ],
+  "ingest_mapping_template": {
+    "tLP": "{% if vars.tlp %}{{ vars.tlp }}{% endif %}",
+    "label": "{{vars.labels}}",
+    "value": "{% if vars.pattern and vars.pattern.split(':')[0][1:] == 'file' %} {{vars.pattern.split('OR')[0].split('=')[1][1:-2]}} {% elif vars.pattern %} {{vars.pattern.split(\"'\")[1]}} {% endif %}",
+    "source": "Mandiant Threat Intel",
+    "created": "{% if vars.created %}{{epoch_to_datetime(arrow.get(vars.created).int_timestamp + (vars.expiry | int)*24*60*60 )}}{% endif %}",
+    "pattern": "{{vars.pattern}}",
+    "modified": "{% if vars.modified %}{{epoch_to_datetime(arrow.get(vars.item.modified).int_timestamp}}{% endif %}",
+    "sourceId": "{{vars.item.id}}",
+    "__replace": "",
+    "validFrom": "{% if vars.item.valid_from %}{{arrow.get(vars.item.valid_from).int_timestamp + (vars.expiry | int)*24*60*60 )}}{% endif %}",
+    "confidence": "{% if vars.confidence %}{{ vars.confidence }}{% endif %}",
+    "reputation": "{% if vars.reputation %}{{ vars.reputation }}{% endif %}",
+    "sourceData": "{{vars | toJSON}}",
+    "typeOfFeed": "{{vars.pattern.split(':')[0][1:]}}",
+    "validUntil": "{% if vars.valid_until %}{{epoch_to_datetime(arrow.get(vars.item.valid_until).int_timestamp + (vars.expiry | int)*24*60*60 )}}{% endif %}",
+    "description": "<p>Revoked: {{vars.revoked}}</p>\n<p>Pattern Type: {{vars.pattern_type}}</p>"
   },
   "configuration": {
     "fields": [
@@ -693,6 +779,29 @@
       "enabled": true
     },
     {
+      "operation": "download_indicators",
+      "title": "Download Indicators",
+      "description": "Downloads feeds and store it in the file",
+      "category": "investigation",
+      "annotation": "download_indicators",
+      "enabled": true,
+      "output_schema": {
+        "files": []
+      },
+      "parameters": [
+        {
+          "title": "Fetch Feeds Published After",
+          "description": "Specify the start DateTime of the duration to fetch feeds incrementally since the last successful pull during data ingestion.",
+          "tooltip": "Specify the start DateTime of the duration to fetch feeds incrementally since the last successful pull during data ingestion.",
+          "type": "datetime",
+          "name": "added_after",
+          "required": false,
+          "editable": true,
+          "visible": true
+        }
+      ]
+    },
+    {
       "title": "Get Indicator Reputation",
       "operation": "get_reputation_of_indicators",
       "category": "investigation",
@@ -709,7 +818,6 @@
           "editable": true,
           "value": "1.1.1.1",
           "tooltip": "Indicator whose reputation information you want to retrieve."
-
         }
       ],
       "output_schema": {},

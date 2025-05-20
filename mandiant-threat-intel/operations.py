@@ -5,9 +5,12 @@ Copyright (c) 2025 Fortinet Inc
 Copyright end
 """
 
+import os.path
+import uuid
 from .mandiant_api_auth import *
 from connectors.core.connector import get_logger, ConnectorError
 import requests, json, datetime, time
+from django.conf import settings
 
 logger = get_logger('mandiant-threat-intel')
 
@@ -81,7 +84,7 @@ def convert_datetime_to_epoch(date_time):
     return int(epoch)
 
 
-def get_indicators(config, params, connector_info):
+def get_indicators(config, params, connector_info, **kwargs):
     try:
         endpoint = "/collections/indicators/objects"
         added_after = params.get('added_after')
@@ -111,7 +114,7 @@ def extract_indicators(response, indicators):
     return indicators
 
 
-def fetch_indicators(config, params, connector_info):
+def fetch_indicators(config, params, connector_info, **kwargs):
     try:
         indicators = []
         endpoint = "/collections/indicators/objects"
@@ -139,7 +142,51 @@ def fetch_indicators(config, params, connector_info):
         raise ConnectorError("{0}".format(str(err)))
 
 
-def get_reputation_of_indicators(config, params, connector_info):
+def download_indicators(config, params, connector_info, **kwargs):
+    try:
+        config_id = config.get('config_id')
+        tenant_id = kwargs.get("request").tenantid
+        indicators = []
+        endpoint = "/collections/indicators/objects"
+        added_after = params.get('added_after', "")
+        if 'T' in added_after:
+            added_after = convert_datetime_to_epoch(added_after)
+        limit = 1000
+        payload = {
+            'added_after': added_after,
+            'length': limit
+        }
+        payload = build_payload(payload)
+        response = make_rest_call(endpoint, 'GET', connector_info, config, params=payload)
+        if bool(response):
+            extract_indicators(response.get('objects'), indicators)
+            response['objects'] = indicators
+        else:
+            response = {"objects": []}
+        base_indicator_dir = settings.ALL_CONFIG.get('application').get('tenant_pv_base_dir')
+        base_indicator_dir = base_indicator_dir.format(tenant_id=tenant_id)
+        try:
+            os.makedirs(base_indicator_dir, exist_ok=True)
+        except Exception as e:
+            base_indicator_dir = '/tmp/'
+            logger.warn("Not able to create dir for downloading indicators")
+
+        config_dir = base_indicator_dir + config_id + '/'
+        try:
+            os.makedirs(config_dir, exist_ok=True)
+        except Exception as e:
+            pass
+        file_name = str(uuid.uuid4()) + '.json'
+        file_path = os.path.join(config_dir, file_name)
+        with open(file_path, "w") as json_file:
+            json.dump(response, json_file, indent=2)
+        return {"files": [file_path.replace(base_indicator_dir, '')]}
+    except Exception as err:
+        logger.exception("{0}".format(str(err)))
+        raise ConnectorError("{0}".format(str(err)))
+
+
+def get_reputation_of_indicators(config, params, connector_info, **kwargs):
     try:
         indicator_value = params.get('indicatorValue')
         tempList = []
@@ -158,7 +205,7 @@ def get_reputation_of_indicators(config, params, connector_info):
         raise ConnectorError("{0}".format(str(err)))
 
 
-def get_reports(config, params, connector_info):
+def get_reports(config, params, connector_info, **kwargs):
     try:
         endpoint = "/collections/reports/objects"
         status = params.get('status')
@@ -188,7 +235,7 @@ def get_reports(config, params, connector_info):
         raise ConnectorError("{0}".format(str(err)))
 
 
-def get_alerts(config, params, connector_info):
+def get_alerts(config, params, connector_info, **kwargs):
     try:
         endpoint = "/collections/alerts/objects"
         alert_type = params.get('alert_type')
@@ -217,7 +264,7 @@ def get_alerts(config, params, connector_info):
         raise ConnectorError("{0}".format(str(err)))
 
 
-def search_collections(config, params, connector_info):
+def search_collections(config, params, connector_info, **kwargs):
     try:
         endpoint = "/collections/search"
         payload = {
@@ -237,7 +284,7 @@ def search_collections(config, params, connector_info):
         raise ConnectorError("{0}".format(str(err)))
 
 
-def execute_an_api_call(config, params, connector_info):
+def execute_an_api_call(config, params, connector_info, **kwargs):
     try:
         endpoint = params.get("endpoint")
         http_method = params.get("method")
@@ -263,6 +310,7 @@ def _check_health(config, connector_info):
 operations = {
     'get_indicators': get_indicators,
     'fetch_indicators': fetch_indicators,
+    'download_indicators': download_indicators,
     'get_reports': get_reports,
     'get_alerts': get_alerts,
     'search_collections': search_collections,
